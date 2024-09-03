@@ -1,0 +1,53 @@
+# MergeTool
+*.orig
+
+# Profile files
+.profile
+
+# Package Files #
+*.jar
+*.war
+*.ear
+
+# Virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+#Ant, Gradle specific
+dist/
+build/
+build.xml
+.gradle
+libs/*
+lib/*
+bin/
+
+#Java specific
+*.class
+
+#General swap/backup files
+*.so
+*.log
+*.out
+*~
+*.swp
+*.DS_Store
+*.lock
+
+#Idea specific
+.classpath
+.project
+.settings
+.idea
+.metadata
+*.iml
+*.ipr
+**/*~
+/target/
+
+# Burp suite specific
+lib/burpsuite_pro*.jar
+lib/burpsuite_free*.jar
+lib/burpsuite_community*.jar
+
+# Avoid committing generated files
+src/main/resources/static/*.jar

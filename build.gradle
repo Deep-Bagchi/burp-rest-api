@@ -1,0 +1,154 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        jcenter()
+    }
+
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:2.2.6.RELEASE")
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'idea'
+apply plugin: 'eclipse'
+apply plugin: 'org.springframework.boot'
+
+final def extensionName = 'burp-rest-api'
+version = '2.2.0'
+
+def updateVersion() {
+    def configFile = new File('src/main/resources/application.yml')
+    println "Updating version to '${version}' in ${configFile}"
+    String configContent = configFile.getText('UTF-8')
+    configContent = configContent.replaceAll(/build\.version: .*/, "build.version: ${version}")
+    configFile.write(configContent, 'UTF-8')
+}
+
+sourceSets {
+    entrypoint {
+        java {
+            compileClasspath += main.output
+            runtimeClasspath += main.output
+        }
+    }
+}
+
+test.onlyIf { file('./lib/burpsuite_pro.jar').exists() }
+
+allprojects {
+    //Display warning
+    println " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    println " !! Make sure that no other Burp instances are running !!"
+    println " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+    //Update version in application file
+    updateVersion()
+}
+
+jar {
+    archiveBaseName = extensionName
+    manifest {
+        attributes('Implementation-Title': 'Burp REST API',
+                'Implementation-Version': archiveVersion)
+    }
+}
+
+repositories {
+    mavenCentral()
+    flatDir {
+        dirs 'lib'
+    }
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+File schemaTargetDir = new File('build/generated-schema')
+
+configurations {
+    jaxb
+    compile.exclude module: "spring-boot-starter-tomcat"
+    testCompile.extendsFrom entrypointCompile
+    testRuntime.extendsFrom entrypointRuntime
+}
+
+dependencies {
+    implementation('org.springframework.boot:spring-boot-starter-web:2.2.6.RELEASE')
+    implementation("org.springframework.boot:spring-boot-starter-jetty:2.2.6.RELEASE")
+    implementation group: 'org.springframework.boot', name: 'spring-boot-loader', version: '2.2.6.RELEASE'
+    implementation "io.springfox:springfox-swagger2:2.8.+"
+    implementation "io.springfox:springfox-swagger-ui:2.8.+"
+    implementation group: 'jakarta.xml.bind', name: 'jakarta.xml.bind-api', version: '2.3.3'
+    compileOnly "net.portswigger.burp.extender:burp-extender-api:2.+"
+
+    entrypointCompileOnly "net.portswigger.burp.extender:burp-extender-api:2.+"
+
+    testImplementation fileTree(dir: 'lib', include: '**/*.jar')
+    testImplementation('org.springframework.boot:spring-boot-starter-test:2.2.6.RELEASE')
+    testImplementation('org.apache.httpcomponents:httpclient:4.5.2')
+    testImplementation('net.portswigger.burp.extender:burp-extender-api:2.+')
+
+    jaxb 'org.glassfish.jaxb:jaxb-jxc:2.+'
+	jaxb 'org.glassfish.jaxb:jaxb-xjc:2.+'
+}
+
+task createschemaTargetDir () {
+	schemaTargetDir.mkdirs()
+}
+
+bootRun {
+    // support passing -Dsystem.property=value to bootRun task
+    //support passing -PappArgs="['arg1']" ex : gradlew bootRun -PappArgs="['--project-file=/test/tes.burp']"
+     if (project.hasProperty("appArgs")) {
+        args Eval.me(appArgs)
+    }
+    systemProperties = System.properties
+
+    if (System.getProperty('DEBUG', 'false') == 'true') {
+        jvmArgs '-Xdebug',
+                '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005'
+    }
+}
+
+
+task entrypointJar(type: Jar) {
+    destinationDirectory = file("src/main/resources/static/")
+    from(sourceSets.entrypoint.output) {
+        include '**/*.class'
+    }
+    archiveFileName = 'rest-api.jar'
+}
+jar.dependsOn entrypointJar
+task deleteEntrypointOriginalJar(type: Delete) {
+    delete entrypointJar.archivePath.toString() + '.original'
+}
+assemble.dependsOn deleteEntrypointOriginalJar
+
+task extractApi(type: Copy) {
+	from(zipTree('build/libs/' + extensionName + '-' + version + '.jar'))
+	into 'build/libs'
+}
+
+task schemagen () {
+	doLast {
+		ant.taskdef(name: 'schemagen', classname: 'com.sun.tools.jxc.SchemaGenTask', classpath: configurations.jaxb.asPath)
+
+		ant.schemagen(
+			srcdir:'src/main/java/com/vmware/burp/extension/domain',
+			destdir:schemaTargetDir,
+			includeAntRuntime:'false'
+		){
+			classpath {
+				fileset(dir: 'build/libs', includes: '**/*.jar')
+			}
+		}
+	}
+}
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs << '-Xlint:deprecation'
+    options.deprecation = true
+}
+
+compileJava.dependsOn createschemaTargetDir
+schemagen.dependsOn extractApi
